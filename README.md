@@ -15,8 +15,11 @@ Reference: TBD
 Environment Used
 --------
 python                    3.7.9
+
 matplotlib                3.3.2
+
 scipy                     1.5.2
+
 numpy                     1.19.2
 
 Instructions for use.
@@ -31,7 +34,9 @@ Import  and generate a graph instance and assign it to a free variable:
     
 Graph instance must be initialised with variables m, n and seed:
 
- 1. **p**: Copying mode. Either p is a float between 0 and 1 for uniform copying model, else p = 'CCM' for correlated copying model. 
+ **p**: Copying mode. 
+ 
+ Either p is a float between 0 and 1 for uniform copying model, else p = 'CCM' for correlated copying model. 
 
 Add N nodes to graph:
 
@@ -48,4 +53,9 @@ Export x and y values for degree distribution graph:
     #mode: Export data for degree distribution of observed network degree if mode='obs', or hidden network if mode='inf'.
     #plot: If plot=True, data is plotted.
 
+To export edgelist for importation into networkx or elsewhere:
+
+    edgelist = G.gen_edgelist(mode = 'obs')
+    #mode: Generate edgelist for observed network if mode = 'obs' or hidden network if mode = 'hidden'
+    
 
