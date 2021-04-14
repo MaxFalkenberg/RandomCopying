@@ -1,76 +1,31 @@
 # -*- coding: utf-8 -*-
-#    Copyright (C) 2020 by
+#    Copyright (C) 2021 by
 #    Max Falkenberg <max.falkenberg13@imperial.ac.uk>
 #    All rights reserved.
 #    BSD license.
 """
-Correlated copying graph generator.
+General correlated copying graph generator.
 """
 
 import numpy as np
 import random
 import matplotlib.pyplot as plt
 import time
-from scipy.special import comb
+import networkx as nx
 
 class rc_graph:
-    """
-    Creates a graph by copying using the uniform copying model or the correlated copying model.
-    Attributes
-    ----------
-    t: int
-        Timestep. Equal to number of nodes in the network.
-    p: float or 'CCM' or 'shuffle' or 'CCM_prob'
-        Copying probability.
-    seed: int
-        Random number seed
-    T:  int
-        Number of edges in the current observed network.
-    T_track: list
-        Number of edges in the observed network for full evolution of
-        network. Only accessible is statistics==True.
-    obs_k: list
-        Observed degree of node i at index i.
-    hidden_k: list
-        Observed degree of node i at index i.
-    obs_adjlist: list of lists
-        Adjacency list for influence network.
-    hidden_adjlist: list of lists
-        Adjacency list for observed network.
-    second_moment: int
-        Current average second moment of degree. Only recorded if
-        statistics == True. Not normalised by N.
-    second_moment_track: list
-        Average second moment of degree over time. Only recorded if
-        statistics == True. Not normalised by N.
-    Methods
-    -------
-    add_nodes(N)
-        Add N nodes to the network.
-    degree_dist(mode='obs',plot=True)
-        Export degree distribution for observed network if mode == 'obs'
-        or hidden network if mode == 'hidden'. Plot if plot == True.
-    plot_edge_growth(scaling=None)
-        Plots edge growth if statistics have been recorded.
-    """
 
-    def __init__(self,p=0,seed = None,statistics = False,cliques=False):
+    def __init__(self,p=0,q=0,r=0,seed = None):
         """
         Class for undirected correlated copying model.
         Parameters
         ----------
-        p    :  float or 'CCM' or 'prob' or 'shuffle', optional, default = 0.
-                copying mode
-                If p == 'CCM', 'hidden' edges copied in observed with p=1. Otherwise p=0.
-                If p == 'shuffle', copied edges are randomly shuffled.
-                If p == 'CCM_prob', each observed edge independently copied with
-                probability set as ratio of hidden to observed degree.
-                If numerical value input, set as fixed copy probability. Observed network equivalent to UCM.
+        p    :  float, default = 0. Equivalent to p_H in paper.
+        q    :  float, default = 0. Equivalent to p_O in paper.
+        r    :  float, default = 0. Equivalent to q in paper.
         seed : integer, random_state, or None (default)
                Indicator of random number generation state.
                See :ref:`Randomness<randomness>`.
-        statistics : boolean, default = True.
-               Boolean to indicate whether to store statistics or not.
         Returns
         -------
         G : Graph
@@ -78,31 +33,50 @@ class rc_graph:
         ------
         Error
             If `p` not in range ``0 <= p <= 1``.
+        Error
+            If `q` not in range ``0 <= q <= 1``.
         """
-        if p == 'CCM' or p == 'shuffle' or p == 'CCM_prob':
-            pass
-        elif p < 0 or p > 1:
-            raise Exception("Probability `p` not in range `0 <= p <= 1`.")
-
-
-        self.t = 2 #time step. Equals total number of nodes.
+        try:
+            if p >= 0 and p <= 1:
+                pass
+            else:
+                raise Exception("Probability `p` not in range `0 <= p <= 1`.")
+        except:
+            raise Exception("Probability `p` must be float in range `0 <= p <= 1`.")
         self.p = p #copying probability
+        try:
+            if q >= 0 and q <= 1:
+                pass
+            else:
+                raise Exception("Probability `q` not in range `0 <= q <= 1`.")
+        except:
+            raise Exception("Probability `q` must be float in range `0 <= q <= 1`.")
+        self.q = q
+        try:
+            if r >= 0 and r <= 1:
+                pass
+            else:
+                raise Exception("Probability `r` not in range `0 <= r <= 1`.")
+        except:
+            raise Exception("Probability `r` must be float in range `0 <= r <= 1`.")
+        self.r = r
+
+        self.t = 3 #time step. Equals total number of nodes.
         self.seed = seed #Random seed
         random.seed(seed)
-        self.__statistics = statistics #Track statistics?
-        self.__targets = [0,1] #Target list
-        self.T = 2 #Number of targets (including repeats)
-        self.obs_adjlist = [[1],[0]] #Adjacency list where nth list is a list of observed neighbors of node n
-        self.hidden_adjlist = [[1],[0]] #Adjacency list for the hidden network
-        self.obs_k =[1,1] #Degree of nodes in observed network
-        self.hidden_k = [1,1] #Degree of nodes in hidden network
-        self.T_track = [] #Track number of edges in observed network over time
-        self.second_moment = 2 #Second moment currently
-        self.second_moment_track = [] #Second moment over time.
-        self.cliques_track = cliques
+        self.T_hidden = 2 #Number of targets (including repeats)
+        self.T_outer = 1
+        self.T_obs = 3
+        self.hidden_adjlist = [[1],[0,2],[1]] #Adjacency list for the hidden network
+        self.outer_adjlist = [[2],[],[0]]
+        self.obs_adjlist = [[1,2],[0,2],[0,1]] #Adjacency list for nodes in observed NOT IN hidden
+        self.hidden_k = [1,2,1] #Degree of nodes in hidden network
+        self.outer_k = [1,0,1]
+        self.obs_k = [2,2,2] #Degree of nodes in obs network
+        self.T_track_hidden = [] #Track number of edges in observed network over time
+        self.T_track_outer = []
+        self.T_track_obs = []
         self.eff_p = []
-        if self.cliques_track:
-            self.cliques = [[1]]
 
     def add_nodes(self,N):
         """
@@ -115,62 +89,73 @@ class rc_graph:
         start_time = time.time()
         for i in range(N):
             target = int(self.t * random.random()) #Initial target
-            self.eff_p.append(self.hidden_k[target]/self.obs_k[target])
-            if self.p == 'CCM':
-                copy_nodes = [target] + self.hidden_adjlist[target] #Neighbors of target which may be copied
-                if self.cliques_track:
-                    if len(self.cliques)<self.hidden_k[target]+1:
-                        to_add = self.hidden_k[target] + 1 - len(self.cliques)
-                        self.cliques.append([0]*(self.t-1))
-                    N = np.ones(len(self.cliques),dtype='int')*self.hidden_k[target]
-                    R = np.arange(0,len(N))
-                    com = comb(N,R)
-                    for i in range(len(self.cliques)-1):
-                        self.cliques[i] += [com[i]+com[i+1]]
-                    self.cliques[-1] += [com[-1]]
+            new_outer = []
+            new_inner = []
 
-            elif self.p == 'shuffle':
-                copy_nodes = [target] + random.sample(self.obs_adjlist[target],self.hidden_k[target])
-            elif self.p == 'CCM_prob':
-                p = self.hidden_k[target]/self.obs_k[target]
-                copy_nodes = [target]
-                for j in self.obs_adjlist[target]:
-                    if random.random()<p:
-                        copy_nodes += [j]
-            else:
-                copy_nodes = [target]
-                for j in self.obs_adjlist[target]:
-                    if random.random() < self.p:
-                        copy_nodes += [j]
-            self.obs_adjlist += [copy_nodes]
-            self.obs_k += [len(copy_nodes)]
-            for j in copy_nodes: #Adjust adjacency lists
+            hcount = 1
+            ocount = 0
+            for j in self.hidden_adjlist[target]:
+                if random.random() < self.p:
+                    if random.random() < self.r:
+                        new_inner.append(j)
+                        hcount+=1
+                    else:
+                        new_outer.append(j)
+                        ocount+=1
+            for j in self.outer_adjlist[target]:
+                if random.random() < self.q:
+                    if random.random() < self.r:
+                        new_inner.append(j)
+                        hcount +=1
+                    else:
+                        new_outer.append(j)
+                        ocount +=1
+
+            self.hidden_adjlist += [[target] + new_inner]
+            self.outer_adjlist += [new_outer]
+            self.obs_adjlist += [[target] + new_inner + new_outer]
+            self.hidden_k += [hcount]
+            self.outer_k += [ocount]
+            self.obs_k += [hcount + ocount]
+            self.hidden_adjlist[target] += [self.t]
+            self.hidden_k[target] += 1
+            self.obs_adjlist[target] += [self.t]
+            self.obs_k[target] += 1
+
+            for j in new_inner:
                 self.obs_adjlist[j] += [self.t]
                 self.obs_k[j] += 1
-
-            self.hidden_adjlist[target] += [self.t] #Updates neighbors in observed network
-            self.hidden_adjlist += [[target]]
-            self.hidden_k += [1]
-            self.hidden_k[target] += 1
+                self.hidden_adjlist[j] += [self.t]
+                self.hidden_k[j] += 1
+            for j in new_outer:
+                self.obs_adjlist[j] += [self.t]
+                self.obs_k[j] += 1
+                self.outer_adjlist[j] += [self.t]
+                self.outer_k[j] += 1
 
             self.t += 1
-            if self.__statistics:
-                self.T += 2*len(copy_nodes)
-                self.T_track += [self.T] #Track number of edges
-                self.second_moment += len(copy_nodes)**2 #Change in sum from new node
-                for j in copy_nodes: #Change in second moment from existing nodes
-                    self.second_moment += (2*self.obs_k[j])-1 #+k**2 - (k-1)**2
-                self.second_moment_track += [self.second_moment]
-        print(time.time()-start_time)
+            self.T_obs += 2 * self.obs_k[-1]
+            self.T_track_obs += [self.T_obs]  # Track number of edges
+            self.T_hidden += 2 * self.hidden_k[-1]
+            self.T_track_hidden += [self.T_hidden]  # Track number of edges
+            self.T_outer += 2 * self.outer_k[-1]
+            self.T_track_outer += [self.T_outer]
+            self.eff_p.append((self.obs_k[-1]-1) / (self.obs_k[target]-1))
+
+            # if time.time() - start_time > 120:
+            #     break
+        print(time.time() - start_time)
+
 
     def degree_dist(self,mode = 'hidden',plot=True,offset = 2):
         """
         Export degree distribution for the observed or hidden network.
         Parameters
         ----------
-        mode: 'obs' or 'hidden':
+        mode: 'obs', 'hidden' or 'outer':
             Export degree distribution for observed network if mode == 'obs'.
             Export degree distribution for hidden network if mode == 'hidden'.
+            Export degree distribution for outer network if mode == 'outer'.
             Plot degree distribution if plot == True.
         plot: boolean
             Plot degree distribution if True.
@@ -184,8 +169,10 @@ class rc_graph:
         """
         if mode == 'hidden':
             y,x = np.histogram(self.hidden_k,bins=np.arange(int(np.min(self.hidden_k)),int(np.max(self.hidden_k)+2)))
-        else:
+        elif mode == 'obs':
             y,x = np.histogram(self.obs_k,bins=np.arange(int(np.min(self.obs_k)),int(np.max(self.obs_k)+2)))
+        else:
+            y, x = np.histogram(self.outer_k, bins=np.arange(int(np.min(self.outer_k)), int(np.max(self.outer_k) + 2)))
         x = x[:-1]
         x = x[y != 0]
         y = y[y != 0]
@@ -219,30 +206,25 @@ class rc_graph:
                 plt.tight_layout()
         return x,y
 
-    def plot_edge_growth(self):
+    def plot_edge_growth(self,mode = 'hidden'):
         """
         Plot number of edges in the observed network over time.
+        Can set mode to ``hidden'', ``obs'' or ``outer''.
 
         """
-        if self.__statistics != True:
-            raise Exception('Statistics for edge growth not recorded.')
-        x = np.arange(2,len(self.T_track)+2,dtype='uint64') #time
-        x_track = np.arange(3,len(self.T_track)+3,dtype='uint64') #time
+        if mode == 'hidden':
+            T_track = self.T_track_hidden
+        elif mode == 'obs':
+            T_track = self.T_track_obs
+        else:
+            T_track = self.T_track_outer
+        x = np.arange(2,len(T_track)+2,dtype='uint64') #time
+        x_track = np.arange(3,len(T_track)+3,dtype='uint64') #time
 
         plt.plot(x,x-1,color='k',ls='--',label=r'$\propto t$') #linear scaling
         plt.plot(x,(x*(x-1))/2,color='k',ls='-.',label=r'$\propto t^{2}$') #complete graph
-
-        T_track = np.array(self.T_track)/2
+        T_track = np.array(T_track)/2
         plt.plot(x_track,T_track) #edge growth
-        if isinstance(self.p,str):
-            pass
-        else:
-            k_mom = self.p * np.array(self.second_moment_track)/(2*T_track)
-            #Ratio of second to first moment scaled by p
-            crossover = np.argmin(k_mom<1) #Index where k_mom exceeds 1
-            if k_mom[crossover]>1: #Only plot if crossover reached
-                plt.plot([x_track[crossover],x_track[crossover]],[T_track[0]-1,T_track[crossover]],ls=':',color='k')
-                plt.plot([x_track[0]-1,x_track[crossover]],[T_track[crossover],T_track[crossover]],ls=':',color='k')
         plt.xlabel(r'$t$',fontsize = 21)
         plt.ylabel(r'$E(t)$',fontsize = 21)
         plt.xlim((2,None))
@@ -258,6 +240,8 @@ class rc_graph:
             adj = self.obs_adjlist
         elif mode == 'hidden':
             adj = self.hidden_adjlist
+        elif mode == 'outer':
+            adj = self.outer_adjlist
         else:
             raise Exception("Mode can only take values `obs` or `hidden`.")
         edgelist = []
@@ -265,3 +249,12 @@ class rc_graph:
             for k in j:
                 edgelist.append((i,k))
         return(edgelist)
+
+    def gen_networkx(self,mode='obs',plot = False):
+        G = nx.Graph()
+        G.add_edges_from(self.gen_edgelist(mode))
+        if plot:
+            c = np.array(list(nx.node_clique_number(G).values()))
+            c = np.log(c)
+            nx.draw(G, pos=nx.kamada_kawai_layout(G),node_size=40,node_color=c,vmin=np.min(c),vmax=np.max(c))
+        return G
