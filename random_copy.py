@@ -204,6 +204,7 @@ class rc_graph:
                 plt.title(mode, fontsize=15)
                 plt.tick_params(labelsize='large', direction='out', right=False, top=False)
                 plt.tight_layout()
+            plt.show()
         return x,y
 
     def plot_edge_growth(self,mode = 'hidden'):
