@@ -32,7 +32,7 @@ Import  and generate a graph instance and assign it to a free variable:
     import random_copy as rc
     G = rc.rc_graph(p=0,q=0,r=0)
     
-Graph instance must be initialised with variables m, n and seed:
+Graph instance must be initialised with copying probabilities:
 
  **p**: Inner circle copying probability. Equivalent to **p_H** in paper.
 
