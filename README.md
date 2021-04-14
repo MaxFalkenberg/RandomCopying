@@ -30,13 +30,23 @@ Python3 implementation.
 Import  and generate a graph instance and assign it to a free variable:
 
     import random_copy as rc
-    G = rc.rc_graph(p=0,seed = None,statistics = False,cliques=False)
+    G = rc.rc_graph(p=0,q=0,r=0)
     
 Graph instance must be initialised with variables m, n and seed:
 
- **p**: Copying mode. 
+ **p**: Inner circle copying probability. Equivalent to **p_H** in paper.
+
+ **q**: Outer circle copying probability. Equivalent to **p_O** in paper.
+
+ **r**: Probability that copied edges are added to hidden network. Equivalent to **r** in paper.
  
- Either p is a float between 0 and 1 for uniform copying model, else p = 'CCM' for correlated copying model. 
+ p, q and r must be floats between 0 t 1.
+
+ **p = q** for UCM.
+
+ **p = 1, q = 0, r = 0** for CCM.
+
+
 
 Add N nodes to graph:
 
@@ -50,7 +60,7 @@ Observed degree adjacency list stored in list of lists called as G.hidden_adjlis
 Export x and y values for degree distribution graph:
 
     G.degree_dist(mode = 'obs',plot)
-    #mode: Export data for degree distribution of observed network degree if mode='obs', or hidden network if mode='inf'.
+    #mode: Export data for degree distribution of observed network degree if mode='obs', or hidden network if mode='hidden'.
     #plot: If plot=True, data is plotted.
 
 To export edgelist for importation into networkx or elsewhere:
